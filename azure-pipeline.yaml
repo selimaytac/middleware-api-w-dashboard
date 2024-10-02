@@ -1,0 +1,73 @@
+trigger:
+- master
+
+pool: 'LinuxPool'
+
+variables:
+       - name: 'imagename'
+         value: 'mw-inventory-v2'
+       - name: 'cont-reg-url'
+         value: 'registery.azurecr.io'
+       - name: 'dockerfile-path'
+         value: 'dockerfile'
+       - name: 'imageVersion'
+         value: 'python-3.11-slim'
+
+stages: 
+  - stage: prodEnv
+    displayName: 'Prod Environment'
+    condition: or ( eq(variables['Build.SourceBranchName'],'master'), eq(variables['Build.SourceBranchName'], 'azure-pipelines'))
+    variables:
+      - name: 'imagetagname'
+        value: 'prod-$(Build.BuildId)'
+    jobs:
+
+      - job: buildImage
+        displayName: 'Build Image with set image version'
+        steps:
+            
+          - task: DockerInstaller@0
+            inputs:
+              dockerVersion: '20.10.7'
+
+          - task: Docker@1
+            displayName: 'Build Image'
+            inputs:
+              azureSubscriptionEndpoint: 'Azure Container Registry'
+              azureContainerRegistry: '$(cont-reg-url)'
+              imageName: '$(imagename):$(imageVersion)-$(imagetagname)'
+              qualifyImageName: true
+              useDefaultContext: true
+              command: 'Build an image'
+              dockerFile: '$(dockerfile-path)'
+
+          - task: Docker@1
+            displayName: 'Push Image'
+            inputs:
+              azureSubscriptionEndpoint: 'Azure Container Registry'
+              azureContainerRegistry: '$(cont-reg-url)'
+              imageName: '$(imagename):$(imageVersion)-$(imagetagname)'
+              qualifyImageName: true
+              useDefaultContext: true
+              command: 'Push an image'
+              dockerFile: '$(dockerfile-path)'
+
+          - task: file-creator@6
+            inputs:
+              filepath: 'server-version.yml'
+              filecontent: '$(imagename):$(imageVersion)-$(imagetagname)'
+              fileoverwrite: true
+              verbose: true'
+  
+          - task: CopyFiles@2
+            displayName: 'Copy version file to Artifact Staging Directory'
+            inputs:
+              Contents: 'server-version.yml'
+              TargetFolder: '$(Build.ArtifactStagingDirectory)'
+            
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Deployment YAML'
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+              ArtifactName: 'prod'
+              publishLocation: 'Container'
